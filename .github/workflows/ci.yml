@@ -2,26 +2,115 @@ name: Java CI Pipeline
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  ci:
+    name: CI - Build, Test, Scan, Containerize
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write # needed for CodeQL results in Security tab
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java 17 (with Maven cache)
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
+          cache: maven
 
-      - name: Build & Test with Maven
-        run: mvn clean test
+      - name: Make mvnw executable
+        run: chmod +x mvnw
 
+      # --- Linting ---
+      - name: Lint (Checkstyle)
+        run: ./mvnw -B clean validate
+
+      # --- Unit Tests ---
+      - name: Unit Tests
+        run: ./mvnw -B test
+
+      # --- Build ---
+      - name: Build (Package)
+        run: ./mvnw -B package -DskipTests
+
+      # --- SCA (Dependency Scan) ---
+      - name: Dependency Vulnerability Scan (OWASP Dependency-Check)
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./mvnw -B dependency-check:check -DnvdApiDelay=20000
+
+
+      - name: Upload Dependency-Check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report/
+
+      # --- Docker Build ---
       - name: Build Docker image
-        run: docker build -t devops-demo .
+        run: docker build -t devops-demo:${{ github.sha }} .
+
+      # --- Image Scan (Trivy) ---
+      - name: Scan Docker image (Trivy)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: devops-demo:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          format: table
+
+      # --- Runtime Test (Smoke test) ---
+      - name: Runtime smoke test (container runs + health endpoint)
+        run: |
+          docker run -d -p 8080:8080 --name devops-demo-test devops-demo:${{ github.sha }}
+          sleep 12
+          curl -f http://localhost:8080/actuator/health
+          docker logs devops-demo-test
+          docker stop devops-demo-test
+          docker rm devops-demo-test
+
+      # --- DockerHub Push (only on main branch pushes) ---
+      - name: Login to DockerHub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Push trusted image to DockerHub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/devops-demo"
+          docker tag devops-demo:${{ github.sha }} ${IMAGE}:${{ github.sha }}
+          docker tag devops-demo:${{ github.sha }} ${IMAGE}:latest
+          docker push ${IMAGE}:${{ github.sha }}
+          docker push ${IMAGE}:latest
+
+  # --- SAST (CodeQL) as a separate job (recommended) ---
+  codeql:
+    name: SAST - CodeQL
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - uses: github/codeql-action/analyze@v3

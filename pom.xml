@@ -25,19 +25,16 @@
 
     <dependencies>
 
-        <!-- Web MVC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Actuator -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- Testing (JUnit 5, Mockito, Spring Test) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -49,11 +46,66 @@
     <build>
         <plugins>
 
-            <!-- Spring Boot Maven Plugin -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+
+            <!-- Checkstyle (Linting / Code Quality Gate) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>checkstyle</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!-- Use your project-level rules -->
+                    <configLocation>checkstyle.xml</configLocation>
+                    <failOnViolation>true</failOnViolation>
+                    <consoleOutput>true</consoleOutput>
+                </configuration>
+            </plugin>
+
+            <!-- OWASP Dependency Check (SCA / Supply-chain Security Gate) -->
+            <plugin>
+    <groupId>org.owasp</groupId>
+    <artifactId>dependency-check-maven</artifactId>
+    <version>9.0.9</version>
+    <executions>
+        <execution>
+            <id>dependency-check</id>
+            <goals>
+                <goal>check</goal>
+            </goals>
+        </execution>
+    </executions>
+    <configuration>
+        <!-- Correct API key -->
+        <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+
+        <!-- Required to avoid NVD 403 errors -->
+        <nvdApiDelay>8000</nvdApiDelay>
+
+        <!-- Do not fail build on NVD feed outages -->
+        <failOnError>false</failOnError>
+
+        <!-- Fail build if a real vuln is found -->
+        <failBuildOnCVSS>7</failBuildOnCVSS>
+
+        <format>HTML</format>
+        <outputDirectory>
+            ${project.build.directory}/dependency-check-report
+        </outputDirectory>
+    </configuration>
+</plugin>
+
 
         </plugins>
     </build>

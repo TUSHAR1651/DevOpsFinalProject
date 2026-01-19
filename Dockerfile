@@ -8,6 +8,7 @@ WORKDIR /app
 COPY pom.xml .
 COPY mvnw .
 COPY .mvn .mvn
+COPY checkstyle.xml .
 
 RUN ./mvnw -B dependency:go-offline
 
