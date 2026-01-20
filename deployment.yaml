@@ -14,6 +14,6 @@ spec:
     spec:
       containers:
       - name: devops-demo
-        image: ${{ secrets.DOCKERHUB_USERNAME }}/devops-demo:latest
+        image: TUSHAR1651/devops-demo:latest
         ports:
         - containerPort: 8080
